@@ -1,27 +1,25 @@
-import type React from "react"
-import type { Metadata } from "next"
-import { JetBrains_Mono } from "next/font/google"
-import "./globals.css"
+import type React from 'react';
+import type { Metadata } from 'next';
+import { JetBrains_Mono } from 'next/font/google';
+import './globals.css';
+import { QueryClientProvider } from '@/module/query/QueryClientProvider';
 
 const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-})
+  subsets: ['latin'],
+  variable: '--font-jetbrains-mono',
+});
 
 export const metadata: Metadata = {
-  title: "Web3 Balance Tracker",
-  description: "Track your Web3 wallet balances",
-  generator: "v0.app",
-}
+  title: 'Open Hyperfolio',
+  description: 'Track your Hyperliquid portfolio',
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${jetbrainsMono.variable} antialiased`}>
-      <body className="font-mono">{children}</body>
+      <body className="font-mono">
+        <QueryClientProvider>{children}</QueryClientProvider>
+      </body>
     </html>
-  )
+  );
 }
