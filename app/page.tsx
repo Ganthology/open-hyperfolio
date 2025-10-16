@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
 import { Address, createPublicClient, formatEther, http } from 'viem';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,8 +44,10 @@ export default function BalanceTracker() {
   const [addresses, setAddresses] = useState<string[]>(['']);
   const [newAddress, setNewAddress] = useState('');
 
-  const activeAddress = addresses[0] ?? '';
-  const enabled = isValidAddress(activeAddress);
+  const validAddresses = useMemo(
+    () => addresses.filter((addr) => isValidAddress(addr)),
+    [addresses],
+  );
 
   const client = useMemo(
     () =>
@@ -86,66 +88,89 @@ export default function BalanceTracker() {
       .then((res) => formatEther(res));
   }
 
-  const { data: spotClearinghouseState, isLoading: isSpotLoading } = useQuery({
-    queryKey: ['spotClearinghouseState', activeAddress],
-    enabled,
-    queryFn: () =>
-      fetchJSON(HYPERLIQUID_API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ type: 'spotClearinghouseState', user: activeAddress }),
-        headers: { 'Content-Type': 'application/json' },
-      }),
+  const spotQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['spotClearinghouseState', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        fetchJSON(HYPERLIQUID_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'spotClearinghouseState', user: address }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })),
   });
+  const spotClearinghouseState = spotQueries.map((q) => q.data).filter(Boolean);
+  const isSpotLoading = spotQueries.some((q) => q.isLoading);
 
-  const { data: perpClearinghouseState, isLoading: isPerpLoading } = useQuery({
-    queryKey: ['perpClearinghouseState', activeAddress],
-    enabled,
-    queryFn: () =>
-      fetchJSON(HYPERLIQUID_API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ type: 'clearinghouseState', user: activeAddress }),
-        headers: { 'Content-Type': 'application/json' },
-      }),
+  const perpQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['perpClearinghouseState', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        fetchJSON(HYPERLIQUID_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'clearinghouseState', user: address }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })),
   });
+  const perpClearinghouseState = perpQueries.map((q) => q.data).filter(Boolean);
+  const isPerpLoading = perpQueries.some((q) => q.isLoading);
 
-  const { data: openOrders, isLoading: isOpenOrdersLoading } = useQuery({
-    queryKey: ['openOrders', activeAddress],
-    enabled,
-    queryFn: () =>
-      fetchJSON(HYPERLIQUID_API_URL, {
-        method: 'POST',
-        body: JSON.stringify({ type: 'frontendOpenOrders', user: activeAddress }),
-        headers: { 'Content-Type': 'application/json' },
-      }),
+  const openOrdersQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['openOrders', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        fetchJSON(HYPERLIQUID_API_URL, {
+          method: 'POST',
+          body: JSON.stringify({ type: 'frontendOpenOrders', user: address }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    })),
   });
+  const openOrders = openOrdersQueries.map((q) => q.data).filter(Boolean);
+  const isOpenOrdersLoading = openOrdersQueries.some((q) => q.isLoading);
 
-  const { data: hyperEvmBalance, isLoading: isEvmLoading } = useQuery({
-    queryKey: ['hyperEvmBalance', activeAddress],
-    enabled,
-    queryFn: async () => {
-      const balance = await client.getBalance({ address: activeAddress as Address });
-      return formatEther(balance);
-    },
+  const hyperEvmQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['hyperEvmBalance', address],
+      enabled: isValidAddress(address),
+      queryFn: async () => {
+        const balance = await client.getBalance({ address: address as Address });
+        return formatEther(balance);
+      },
+    })),
   });
+  const hyperEvmBalances = hyperEvmQueries.map((q) => q.data).filter(Boolean);
+  const hyperEvmBalance = hyperEvmBalances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isEvmLoading = hyperEvmQueries.some((q) => q.isLoading);
 
-  const { data: hyperLendPositions, isLoading: isHyperLendLoading } = useQuery({
-    queryKey: ['hyperLend', activeAddress],
-    enabled,
-    queryFn: async () => {
-      const data = await fetchJSON(
-        `${HYPERLEND_API_URL}/data/user/valueChange?chain=hyperEvm&address=${activeAddress}`,
-      );
-      const newPositions = (data?.newPositions ?? {}) as Record<
-        string,
-        { tokenValue: string; usdValue: string; name: string }
-      >;
-      return Object.values(newPositions).map((p) => ({
-        name: p.name,
-        amount: p.tokenValue,
-        value: p.usdValue,
-      }));
-    },
+  const hyperLendQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['hyperLend', address],
+      enabled: isValidAddress(address),
+      queryFn: async () => {
+        const data = await fetchJSON(
+          `${HYPERLEND_API_URL}/data/user/valueChange?chain=hyperEvm&address=${address}`,
+        );
+        const newPositions = (data?.newPositions ?? {}) as Record<
+          string,
+          { tokenValue: string; usdValue: string; name: string }
+        >;
+        return Object.values(newPositions).map((p) => ({
+          name: p.name,
+          amount: p.tokenValue,
+          value: p.usdValue,
+        }));
+      },
+    })),
   });
+  const hyperLendPositions = hyperLendQueries.flatMap((q) => q.data || []);
+  const isHyperLendLoading = hyperLendQueries.some((q) => q.isLoading);
 
   type PendleMarketPosition = {
     marketId: string;
@@ -154,61 +179,96 @@ export default function BalanceTracker() {
     lp: { balance: string; valuation: number };
   };
 
-  const { data: pendlePositions, isLoading: isPendleLoading } = useQuery({
-    queryKey: ['pendle', activeAddress],
-    enabled,
-    queryFn: async () => {
-      const state = await fetchJSON(
-        `${PENDLE_API_URL}/v1/dashboard/positions/database/${activeAddress}?filterUsd=0`,
-      );
-      const positions = (state?.positions ?? []) as Array<{
-        chainId: number;
-        openPositions: PendleMarketPosition[];
-      }>;
-      return positions.filter((p) => p.chainId === 999).flatMap((p) => p.openPositions);
-    },
+  const pendleQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['pendle', address],
+      enabled: isValidAddress(address),
+      queryFn: async () => {
+        const state = await fetchJSON(
+          `${PENDLE_API_URL}/v1/dashboard/positions/database/${address}?filterUsd=0`,
+        );
+        const positions = (state?.positions ?? []) as Array<{
+          chainId: number;
+          openPositions: PendleMarketPosition[];
+        }>;
+        return positions.filter((p) => p.chainId === 999).flatMap((p) => p.openPositions);
+      },
+    })),
   });
+  const pendlePositions = pendleQueries.flatMap((q) => q.data || []);
+  const isPendleLoading = pendleQueries.some((q) => q.isLoading);
 
-  const { data: beHYPEBalance, isLoading: isBeHypeLoading } = useQuery({
-    queryKey: ['beHYPE', activeAddress],
-    enabled,
-    queryFn: () =>
-      readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.HYPERBEAT.beHYPE, activeAddress),
+  const beHYPEQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['beHYPE', address],
+      enabled: isValidAddress(address),
+      queryFn: () => readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.HYPERBEAT.beHYPE, address),
+    })),
   });
+  const beHYPEBalances = beHYPEQueries.map((q) => q.data).filter(Boolean);
+  const beHYPEBalance = beHYPEBalances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isBeHypeLoading = beHYPEQueries.some((q) => q.isLoading);
 
-  const { data: feUSDBalance, isLoading: isFeUsdLoading } = useQuery({
-    queryKey: ['feUSD', activeAddress],
-    enabled,
-    queryFn: () =>
-      readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.feUSD, activeAddress),
+  const feUSDQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['feUSD', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.feUSD, address),
+    })),
   });
+  const feUSDBalances = feUSDQueries.map((q) => q.data).filter(Boolean);
+  const feUSDBalance = feUSDBalances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isFeUsdLoading = feUSDQueries.some((q) => q.isLoading);
 
-  const { data: usdt0Balance, isLoading: isUsdt0Loading } = useQuery({
-    queryKey: ['USDT0', activeAddress],
-    enabled,
-    queryFn: () =>
-      readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0, activeAddress),
+  const usdt0Queries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['USDT0', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0, address),
+    })),
   });
+  const usdt0Balances = usdt0Queries.map((q) => q.data).filter(Boolean);
+  const usdt0Balance = usdt0Balances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isUsdt0Loading = usdt0Queries.some((q) => q.isLoading);
 
-  const { data: usdt0FrontierBalance, isLoading: isUsdt0FrontierLoading } = useQuery({
-    queryKey: ['USDT0Frontier', activeAddress],
-    enabled,
-    queryFn: () =>
-      readContractBalance(
-        PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0Frontier,
-        activeAddress,
-      ),
+  const usdt0FrontierQueries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['USDT0Frontier', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0Frontier, address),
+    })),
   });
+  const usdt0FrontierBalances = usdt0FrontierQueries.map((q) => q.data).filter(Boolean);
+  const usdt0FrontierBalance = usdt0FrontierBalances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isUsdt0FrontierLoading = usdt0FrontierQueries.some((q) => q.isLoading);
 
-  const { data: beHYPEUSDT0Balance, isLoading: isBeHypeUsdt0Loading } = useQuery({
-    queryKey: ['beHYPE_USDT0', activeAddress],
-    enabled,
-    queryFn: () =>
-      readContractBalance(
-        PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL['beHYPE/USDT0'],
-        activeAddress,
-      ),
+  const beHYPEUSDT0Queries = useQueries({
+    queries: validAddresses.map((address) => ({
+      queryKey: ['beHYPE_USDT0', address],
+      enabled: isValidAddress(address),
+      queryFn: () =>
+        readContractBalance(
+          PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL['beHYPE/USDT0'],
+          address,
+        ),
+    })),
   });
+  const beHYPEUSDT0Balances = beHYPEUSDT0Queries.map((q) => q.data).filter(Boolean);
+  const beHYPEUSDT0Balance = beHYPEUSDT0Balances
+    .reduce((sum, bal) => sum + parseFloat(bal || '0'), 0)
+    .toFixed(4);
+  const isBeHypeUsdt0Loading = beHYPEUSDT0Queries.some((q) => q.isLoading);
 
   // Portfolio aggregation
   const portfolio = useMemo(() => {
@@ -318,11 +378,16 @@ export default function BalanceTracker() {
               </Badge>
             ))}
           </div>
+          {validAddresses.length > 0 && (
+            <div className="mt-2 text-sm text-muted-foreground font-mono">
+              AGGREGATING {validAddresses.length} WALLET{validAddresses.length !== 1 ? 'S' : ''}
+            </div>
+          )}
         </div>
       </div>
 
       <div className="container mx-auto px-4 py-6">
-        {!enabled ? (
+        {validAddresses.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground font-mono">
             ENTER_WALLET_ADDRESS_TO_VIEW_BALANCE
           </div>
