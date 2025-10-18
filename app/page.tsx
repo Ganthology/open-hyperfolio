@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { Address, createPublicClient, formatEther, http } from 'viem';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Plus, Wallet } from 'lucide-react';
+import { useQueryState, parseAsString, parseAsArrayOf } from 'nuqs';
 
 const HYPERLIQUID_API_URL = 'https://api.hyperliquid.xyz/info';
 const HYPERLEND_API_URL = 'https://api.hyperlend.finance';
@@ -41,7 +42,10 @@ function ensureArrayFromUnknown(input: unknown) {
 }
 
 export default function BalanceTracker() {
-  const [addresses, setAddresses] = useState<string[]>(['']);
+  const [addresses, setAddresses] = useQueryState(
+    'address',
+    parseAsArrayOf(parseAsString).withDefault([]),
+  );
   const [newAddress, setNewAddress] = useState('');
 
   const validAddresses = useMemo(
@@ -325,16 +329,21 @@ export default function BalanceTracker() {
     };
   }, [feUSDBalance, usdt0Balance, usdt0FrontierBalance, hyperLendPositions, pendlePositions]);
 
-  const addAddress = () => {
-    if (newAddress && !addresses.includes(newAddress)) {
-      setAddresses([...addresses, newAddress]);
+  const addAddress = useCallback(() => {
+    const candidate = newAddress.trim();
+    if (!candidate) return;
+    if (isValidAddress(candidate) && !addresses.includes(candidate)) {
+      setAddresses([...addresses, candidate]);
       setNewAddress('');
     }
-  };
+  }, [newAddress, addresses, setAddresses]);
 
-  const removeAddress = (address: string) => {
-    setAddresses(addresses.filter((addr) => addr !== address));
-  };
+  const removeAddress = useCallback(
+    (address: string) => {
+      setAddresses(addresses.filter((addr) => addr !== address));
+    },
+    [addresses, setAddresses],
+  );
 
   return (
     <div className="min-h-screen bg-background font-mono">
@@ -353,7 +362,7 @@ export default function BalanceTracker() {
               value={newAddress}
               onChange={(e) => setNewAddress(e.target.value)}
               className="flex-1 font-mono"
-              onKeyPress={(e) => e.key === 'Enter' && addAddress()}
+              onKeyDown={(e) => e.key === 'Enter' && addAddress()}
             />
             <Button onClick={addAddress} size="icon" className="font-mono">
               <Plus className="h-4 w-4" />
