@@ -1,10 +1,16 @@
 import type { HyperLendPosition } from '../types';
 
+const DEFAULT_API_URL = 'https://api.hyperlend.finance';
+
 /**
  * Service for interacting with HyperLend API
  */
 export class HyperLendService {
-  constructor(private readonly apiUrl: string) {}
+  private readonly apiUrl: string;
+
+  constructor(apiUrl?: string) {
+    this.apiUrl = apiUrl ?? DEFAULT_API_URL;
+  }
 
   /**
    * Fetch JSON from URL with error handling
