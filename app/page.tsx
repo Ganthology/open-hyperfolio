@@ -1,8 +1,7 @@
 'use client';
 
-import { useMemo, useCallback, useState } from 'react';
-import { useQuery, useQueries } from '@tanstack/react-query';
-import { Address, createPublicClient, formatEther, http } from 'viem';
+import { useMemo, useCallback, useState, useRef } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,24 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Plus, Wallet } from 'lucide-react';
 import { useQueryState, parseAsString, parseAsArrayOf } from 'nuqs';
-
-const HYPERLIQUID_API_URL = 'https://api.hyperliquid.xyz/info';
-const HYPERLEND_API_URL = 'https://api.hyperlend.finance';
-const PENDLE_API_URL = 'https://api-v2.pendle.finance/core';
-const HYPERLIQUID_RPC_URL = 'https://rpc.hyperliquid.xyz/evm';
-const beHYPE_SMART_CONTRACT_ADDRESS = '0xd8FC8F0b03eBA61F64D08B0bef69d80916E5DdA9';
-
-const PROTOCOL_SMART_CONTRACT_ADDRESS = {
-  FELIX_PROTOCOL: {
-    feUSD: '0x02c6a2fa58cc01a18b8d9e00ea48d65e4df26c70',
-    USDT0: '0xfc5126377f0efc0041c0969ef9ba903ce67d151e',
-    USDT0Frontier: '0x9896a8605763106e57A51aa0a97Fe8099E806bb3',
-    'beHYPE/USDT0': '0x68e37dE8d93d3496ae143F2E900490f6280C57cD',
-  },
-  HYPERBEAT: {
-    beHYPE: beHYPE_SMART_CONTRACT_ADDRESS,
-  },
-} as const;
+import type { PortfolioRepository } from '@/module/portfolio/data/repository/PortfolioRepository';
+import { PortfolioRepositoryImpl } from '@/module/portfolio/data/repository/PortfolioRepositoryImpl';
 
 function isValidAddress(address: string) {
   return typeof address === 'string' && address.startsWith('0x') && address.length >= 6;
@@ -53,98 +36,51 @@ export default function BalanceTracker() {
     [addresses],
   );
 
-  const client = useMemo(
-    () =>
-      createPublicClient({
-        chain: {
-          id: 999,
-          name: 'HyperLiquid',
-          nativeCurrency: { name: 'HyperLiquid', symbol: 'HYPE', decimals: 18 },
-          rpcUrls: { default: { http: [HYPERLIQUID_RPC_URL] } },
-        },
-        transport: http(HYPERLIQUID_RPC_URL),
-      }),
-    [],
-  );
-
-  async function fetchJSON(url: string, init?: RequestInit) {
-    const res = await fetch(url, init);
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-    return res.json();
+  // Initialize repository (singleton pattern using useRef)
+  const repositoryRef = useRef<PortfolioRepository | null>(null);
+  if (!repositoryRef.current) {
+    repositoryRef.current = new PortfolioRepositoryImpl();
   }
 
-  function readContractBalance(contractAddress: string, walletAddress: string) {
-    return client
-      .readContract({
-        address: contractAddress as Address,
-        abi: [
-          {
-            type: 'function',
-            name: 'balanceOf',
-            stateMutability: 'view',
-            inputs: [{ name: 'owner', type: 'address' }],
-            outputs: [{ type: 'uint256' }],
-          },
-        ],
-        functionName: 'balanceOf',
-        args: [walletAddress as Address],
-      })
-      .then((res) => formatEther(res));
-  }
-
+  // query hyperliquid api for spot clearinghouse state
   const spotQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['spotClearinghouseState', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        fetchJSON(HYPERLIQUID_API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'spotClearinghouseState', user: address }),
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      queryFn: () => repositoryRef.current!.getSpotClearinghouseState(address),
     })),
   });
   const spotClearinghouseState = spotQueries.map((q) => q.data).filter(Boolean);
   const isSpotLoading = spotQueries.some((q) => q.isLoading);
 
+  // query hyperliquid api for perp clearinghouse state
   const perpQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['perpClearinghouseState', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        fetchJSON(HYPERLIQUID_API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'clearinghouseState', user: address }),
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      queryFn: () => repositoryRef.current!.getPerpClearinghouseState(address),
     })),
   });
   const perpClearinghouseState = perpQueries.map((q) => q.data).filter(Boolean);
   const isPerpLoading = perpQueries.some((q) => q.isLoading);
 
+  // query hyperliquid api for open orders
   const openOrdersQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['openOrders', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        fetchJSON(HYPERLIQUID_API_URL, {
-          method: 'POST',
-          body: JSON.stringify({ type: 'frontendOpenOrders', user: address }),
-          headers: { 'Content-Type': 'application/json' },
-        }),
+      queryFn: () => repositoryRef.current!.getOpenOrders(address),
     })),
   });
   const openOrders = openOrdersQueries.map((q) => q.data).filter(Boolean);
   const isOpenOrdersLoading = openOrdersQueries.some((q) => q.isLoading);
 
+  // query to get hyperEvm balance
   const hyperEvmQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['hyperEvmBalance', address],
       enabled: isValidAddress(address),
-      queryFn: async () => {
-        const balance = await client.getBalance({ address: address as Address });
-        return formatEther(balance);
-      },
+      queryFn: () => repositoryRef.current!.getHyperEvmBalance(address),
     })),
   });
   const hyperEvmBalances = hyperEvmQueries.map((q) => q.data).filter(Boolean);
@@ -153,60 +89,34 @@ export default function BalanceTracker() {
     .toFixed(4);
   const isEvmLoading = hyperEvmQueries.some((q) => q.isLoading);
 
+  // query hyperlend api for hyperlend positions
   const hyperLendQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['hyperLend', address],
       enabled: isValidAddress(address),
-      queryFn: async () => {
-        const data = await fetchJSON(
-          `${HYPERLEND_API_URL}/data/user/valueChange?chain=hyperEvm&address=${address}`,
-        );
-        const newPositions = (data?.newPositions ?? {}) as Record<
-          string,
-          { tokenValue: string; usdValue: string; name: string }
-        >;
-        return Object.values(newPositions).map((p) => ({
-          name: p.name,
-          amount: p.tokenValue,
-          value: p.usdValue,
-        }));
-      },
+      queryFn: () => repositoryRef.current!.getHyperLendPositions(address),
     })),
   });
   const hyperLendPositions = hyperLendQueries.flatMap((q) => q.data || []);
   const isHyperLendLoading = hyperLendQueries.some((q) => q.isLoading);
 
-  type PendleMarketPosition = {
-    marketId: string;
-    pt: { balance: string; valuation: number };
-    yt: { balance: string; valuation: number };
-    lp: { balance: string; valuation: number };
-  };
-
+  // query pendle api for pendle positions
   const pendleQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['pendle', address],
       enabled: isValidAddress(address),
-      queryFn: async () => {
-        const state = await fetchJSON(
-          `${PENDLE_API_URL}/v1/dashboard/positions/database/${address}?filterUsd=0`,
-        );
-        const positions = (state?.positions ?? []) as Array<{
-          chainId: number;
-          openPositions: PendleMarketPosition[];
-        }>;
-        return positions.filter((p) => p.chainId === 999).flatMap((p) => p.openPositions);
-      },
+      queryFn: () => repositoryRef.current!.getPendlePositions(address),
     })),
   });
   const pendlePositions = pendleQueries.flatMap((q) => q.data || []);
   const isPendleLoading = pendleQueries.some((q) => q.isLoading);
 
+  // query beHYPE smart contract for beHYPE balance
   const beHYPEQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['beHYPE', address],
       enabled: isValidAddress(address),
-      queryFn: () => readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.HYPERBEAT.beHYPE, address),
+      queryFn: () => repositoryRef.current!.getBeHYPEBalance(address),
     })),
   });
   const beHYPEBalances = beHYPEQueries.map((q) => q.data).filter(Boolean);
@@ -215,12 +125,12 @@ export default function BalanceTracker() {
     .toFixed(4);
   const isBeHypeLoading = beHYPEQueries.some((q) => q.isLoading);
 
+  // query feUSD smart contract for feUSD balance
   const feUSDQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['feUSD', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.feUSD, address),
+      queryFn: () => repositoryRef.current!.getFeUSDBalance(address),
     })),
   });
   const feUSDBalances = feUSDQueries.map((q) => q.data).filter(Boolean);
@@ -229,12 +139,12 @@ export default function BalanceTracker() {
     .toFixed(4);
   const isFeUsdLoading = feUSDQueries.some((q) => q.isLoading);
 
+  // query USDT0 smart contract for USDT0 balance
   const usdt0Queries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['USDT0', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0, address),
+      queryFn: () => repositoryRef.current!.getUSDT0Balance(address),
     })),
   });
   const usdt0Balances = usdt0Queries.map((q) => q.data).filter(Boolean);
@@ -247,8 +157,7 @@ export default function BalanceTracker() {
     queries: validAddresses.map((address) => ({
       queryKey: ['USDT0Frontier', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        readContractBalance(PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL.USDT0Frontier, address),
+      queryFn: () => repositoryRef.current!.getUSDT0FrontierBalance(address),
     })),
   });
   const usdt0FrontierBalances = usdt0FrontierQueries.map((q) => q.data).filter(Boolean);
@@ -257,15 +166,12 @@ export default function BalanceTracker() {
     .toFixed(4);
   const isUsdt0FrontierLoading = usdt0FrontierQueries.some((q) => q.isLoading);
 
+  // query beHYPE/USDT0 smart contract for beHYPE/USDT0 balance
   const beHYPEUSDT0Queries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['beHYPE_USDT0', address],
       enabled: isValidAddress(address),
-      queryFn: () =>
-        readContractBalance(
-          PROTOCOL_SMART_CONTRACT_ADDRESS.FELIX_PROTOCOL['beHYPE/USDT0'],
-          address,
-        ),
+      queryFn: () => repositoryRef.current!.getBeHYPEUSDT0Balance(address),
     })),
   });
   const beHYPEUSDT0Balances = beHYPEUSDT0Queries.map((q) => q.data).filter(Boolean);
