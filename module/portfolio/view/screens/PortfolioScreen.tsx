@@ -30,7 +30,7 @@ export function PortfolioScreen() {
     perpClearinghouseState,
     openOrders,
     hyperEvmBalance,
-    hyperLendPositions,
+    hyperLendData,
     pendlePositions,
     beHYPEBalance,
     feUSDBalance,
@@ -373,29 +373,189 @@ export function PortfolioScreen() {
               </CardContent>
             </Card>
 
+            {/* HyperLend Section */}
             <Card className="border">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="font-mono">HYPERLEND_POSITIONS</CardTitle>
+              <CardHeader>
+                <CardTitle className="font-mono">HYPERLEND_LENDING</CardTitle>
               </CardHeader>
               <CardContent>
                 {isHyperLendLoading ? (
                   <div className="text-muted-foreground font-mono">Loading...</div>
-                ) : hyperLendPositions && hyperLendPositions.length > 0 ? (
-                  <div className="space-y-2">
-                    {hyperLendPositions.map((p) => (
-                      <div
-                        key={p.name}
-                        className="flex items-center justify-between p-2 border font-mono text-sm"
-                      >
-                        <div>{p.name}</div>
-                        <div>
-                          {p.amount} ${p.value}
+                ) : (
+                  <div className="space-y-6">
+                    {/* Summary Cards */}
+                    <div className="grid md:grid-cols-3 gap-4">
+                      <div className="p-4 border">
+                        <div className="text-xs text-muted-foreground font-mono mb-1">
+                          TOTAL_SUPPLIED
+                        </div>
+                        <div className="text-2xl font-bold font-mono">
+                          ${hyperLendData.totalSuppliedUSD.toFixed(2)}
                         </div>
                       </div>
-                    ))}
+                      <div className="p-4 border">
+                        <div className="text-xs text-muted-foreground font-mono mb-1">
+                          TOTAL_BORROWED
+                        </div>
+                        <div className="text-2xl font-bold font-mono">
+                          ${hyperLendData.totalBorrowedUSD.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="p-4 border">
+                        <div className="text-xs text-muted-foreground font-mono mb-1">
+                          NET_POSITION
+                        </div>
+                        <div className="text-2xl font-bold font-mono">
+                          $
+                          {(
+                            hyperLendData.totalSuppliedUSD - hyperLendData.totalBorrowedUSD
+                          ).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Health Factors */}
+                    {(hyperLendData.coreHealthFactor || hyperLendData.isolatedHealthFactor) && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-bold text-muted-foreground font-mono">
+                          HEALTH_FACTORS
+                        </div>
+                        {hyperLendData.coreHealthFactor && (
+                          <div className="flex items-center justify-between p-3 border">
+                            <span className="font-mono">CORE</span>
+                            <span
+                              className={`text-xl font-bold font-mono ${
+                                Number.parseFloat(hyperLendData.coreHealthFactor) > 1.5
+                                  ? 'text-green-600'
+                                  : Number.parseFloat(hyperLendData.coreHealthFactor) > 1.2
+                                  ? 'text-yellow-600'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {hyperLendData.coreHealthFactor}
+                            </span>
+                          </div>
+                        )}
+                        {hyperLendData.isolatedHealthFactor && (
+                          <div className="flex items-center justify-between p-3 border">
+                            <span className="font-mono">ISOLATED</span>
+                            <span
+                              className={`text-xl font-bold font-mono ${
+                                Number.parseFloat(hyperLendData.isolatedHealthFactor) > 1.5
+                                  ? 'text-green-600'
+                                  : Number.parseFloat(hyperLendData.isolatedHealthFactor) > 1.2
+                                  ? 'text-yellow-600'
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {hyperLendData.isolatedHealthFactor}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Core Positions */}
+                    {hyperLendData.allCorePositions.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-bold text-muted-foreground font-mono">
+                          CORE_POSITIONS
+                        </div>
+                        <div className="space-y-2">
+                          {hyperLendData.allCorePositions.map((position, idx) => (
+                            <div key={idx} className="border p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="font-bold font-mono">{position.asset}</div>
+                                {position.isCollateral && (
+                                  <Badge variant="outline" className="font-mono text-xs">
+                                    COLLATERAL
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-sm font-mono">
+                                <div>
+                                  <div className="text-muted-foreground text-xs">SUPPLIED</div>
+                                  <div>
+                                    {Number.parseFloat(position.supplyBalance).toFixed(4)} ( $
+                                    {position.supplyBalanceUSD})
+                                  </div>
+                                  <div className="text-green-600 text-xs">
+                                    APY: {position.supplyAPY}%
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground text-xs">BORROWED</div>
+                                  <div>
+                                    {Number.parseFloat(position.borrowBalance).toFixed(4)} ( $
+                                    {position.borrowBalanceUSD})
+                                  </div>
+                                  <div className="text-red-600 text-xs">
+                                    APY: {position.borrowAPY}%
+                                  </div>
+                                </div>
+                              </div>
+                              {position.liquidationPrice && (
+                                <div className="mt-2 text-xs text-muted-foreground font-mono">
+                                  LIQUIDATION_PRICE: ${position.liquidationPrice}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Isolated Positions */}
+                    {hyperLendData.allIsolatedPositions.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="text-sm font-bold text-muted-foreground font-mono">
+                          ISOLATED_POSITIONS
+                        </div>
+                        <div className="space-y-2">
+                          {hyperLendData.allIsolatedPositions.map((position, idx) => (
+                            <div key={idx} className="border p-3">
+                              <div className="font-bold font-mono mb-2">
+                                {position.assetSymbol} / {position.collateralSymbol}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-sm font-mono">
+                                <div>
+                                  <div className="text-muted-foreground text-xs">SUPPLIED</div>
+                                  <div>
+                                    {Number.parseFloat(position.supplyBalance).toFixed(4)} ( $
+                                    {position.supplyBalanceUSD})
+                                  </div>
+                                  <div className="text-green-600 text-xs">
+                                    APY: {position.supplyAPY}%
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-muted-foreground text-xs">BORROWED</div>
+                                  <div>
+                                    {Number.parseFloat(position.borrowBalance).toFixed(4)} ( $
+                                    {position.borrowBalanceUSD})
+                                  </div>
+                                  <div className="text-red-600 text-xs">
+                                    APY: {position.borrowAPY}%
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-2 text-xs text-muted-foreground font-mono">
+                                LIQUIDATION_PRICE: ${position.liquidationPrice}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {hyperLendData.allCorePositions.length === 0 &&
+                      hyperLendData.allIsolatedPositions.length === 0 && (
+                        <div className="text-center py-12 text-muted-foreground font-mono">
+                          NO_LENDING_POSITIONS
+                        </div>
+                      )}
                   </div>
-                ) : (
-                  <div className="text-muted-foreground font-mono">No positions</div>
                 )}
               </CardContent>
             </Card>

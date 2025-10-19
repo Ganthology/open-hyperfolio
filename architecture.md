@@ -20,6 +20,7 @@ Simple version of clean architecture
 
 - Interfaces for API, request and payload interfaces, each enums and value types are considered an entity
 - Usually each entity will be in each own file, and named with proper prefixes that gives the most relevant context
+- Prefer interface over type, use type if union is needed
 
 ## View layer
 
