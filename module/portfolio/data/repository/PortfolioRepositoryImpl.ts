@@ -9,10 +9,10 @@ import type {
   SpotClearinghouseState,
   PerpClearinghouseState,
   OpenOrder,
-  HyperLendPosition,
   PendleMarketPosition,
   ERC20Balance,
 } from '../types';
+import type { HyperLendData } from '../entities/hyperlend/HyperLendData';
 
 // Smart contract addresses
 const CONTRACT_ADDRESSES = {
@@ -67,8 +67,8 @@ export class PortfolioRepositoryImpl implements PortfolioRepository {
     return this.hyperliquidService.getHyperEvmBalance(address);
   }
 
-  async getHyperLendPositions(address: string): Promise<HyperLendPosition[]> {
-    return this.hyperLendService.getPositions(address);
+  async getHyperLendData(address: string): Promise<HyperLendData> {
+    return this.hyperLendService.getAllData(address);
   }
 
   async getPendlePositions(address: string): Promise<PendleMarketPosition[]> {

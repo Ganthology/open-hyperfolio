@@ -7,12 +7,6 @@ export type PerpClearinghouseState = unknown;
 
 export type OpenOrder = unknown;
 
-export type HyperLendPosition = {
-  name: string;
-  amount: string;
-  value: string;
-};
-
 export type PendleMarketPosition = {
   marketId: string;
   pt: { balance: string; valuation: number };

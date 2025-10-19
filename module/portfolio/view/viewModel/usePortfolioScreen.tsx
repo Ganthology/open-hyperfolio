@@ -1,9 +1,10 @@
-import { useMemo, useCallback, useState, useRef } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { useQueryState, parseAsString, parseAsArrayOf } from 'nuqs';
 import { PortfolioRepositoryImpl } from '@/module/portfolio/data/repository/PortfolioRepositoryImpl';
 import type { PortfolioRepository } from '@/module/portfolio/data/repository/PortfolioRepository';
-import type { HyperLendPosition, PendleMarketPosition } from '@/module/portfolio/data/types';
+import type { PendleMarketPosition } from '@/module/portfolio/data/types';
+import type { HyperLendData } from '@/module/portfolio/data/entities/hyperlend/HyperLendData';
 import { isValidAddress } from '@/module/portfolio/utils/helpers';
 
 /**
@@ -79,16 +80,74 @@ export function usePortfolioScreen() {
     .toFixed(4);
   const isEvmLoading = hyperEvmQueries.some((q) => q.isLoading);
 
-  // HyperLend positions
+  // HyperLend data (Core + Isolated)
   const hyperLendQueries = useQueries({
     queries: validAddresses.map((address) => ({
       queryKey: ['hyperLend', address],
       enabled: isValidAddress(address),
-      queryFn: () => repositoryRef.current!.getHyperLendPositions(address),
+      queryFn: () => repositoryRef.current!.getHyperLendData(address),
     })),
   });
-  const hyperLendPositions = hyperLendQueries.flatMap((q) => q.data || []);
+  const hyperLendDataArray = hyperLendQueries.map((q) => q.data).filter(Boolean) as HyperLendData[];
   const isHyperLendLoading = hyperLendQueries.some((q) => q.isLoading);
+
+  // Aggregate HyperLend data across all addresses
+  const hyperLendAggregated = useMemo(() => {
+    if (hyperLendDataArray.length === 0) {
+      return {
+        totalSuppliedUSD: 0,
+        totalBorrowedUSD: 0,
+        coreHealthFactor: null as string | null,
+        isolatedHealthFactor: null as string | null,
+        allCorePositions: [],
+        allIsolatedPositions: [],
+      };
+    }
+
+    let totalSuppliedUSD = 0;
+    let totalBorrowedUSD = 0;
+    const allCorePositions = [];
+    const allIsolatedPositions = [];
+    let minCoreHealthFactor: number | null = null;
+    let minIsolatedHealthFactor: number | null = null;
+
+    for (const data of hyperLendDataArray) {
+      // Aggregate Core data
+      totalSuppliedUSD += Number.parseFloat(data.core.totalSuppliedUSD);
+      totalBorrowedUSD += Number.parseFloat(data.core.totalBorrowedUSD);
+      allCorePositions.push(...data.core.positions);
+
+      // Track minimum health factor (worst case)
+      if (data.core.healthFactor !== null) {
+        const hf = Number.parseFloat(data.core.healthFactor);
+        if (minCoreHealthFactor === null || hf < minCoreHealthFactor) {
+          minCoreHealthFactor = hf;
+        }
+      }
+
+      // Aggregate Isolated data
+      totalSuppliedUSD += Number.parseFloat(data.isolated.totalSuppliedUSD);
+      totalBorrowedUSD += Number.parseFloat(data.isolated.totalBorrowedUSD);
+      allIsolatedPositions.push(...data.isolated.positions);
+
+      if (data.isolated.healthFactor !== null) {
+        const hf = Number.parseFloat(data.isolated.healthFactor);
+        if (minIsolatedHealthFactor === null || hf < minIsolatedHealthFactor) {
+          minIsolatedHealthFactor = hf;
+        }
+      }
+    }
+
+    return {
+      totalSuppliedUSD,
+      totalBorrowedUSD,
+      coreHealthFactor: minCoreHealthFactor !== null ? minCoreHealthFactor.toFixed(2) : null,
+      isolatedHealthFactor:
+        minIsolatedHealthFactor !== null ? minIsolatedHealthFactor.toFixed(2) : null,
+      allCorePositions,
+      allIsolatedPositions,
+    };
+  }, [hyperLendDataArray]);
 
   // Pendle positions
   const pendleQueries = useQueries({
@@ -186,7 +245,7 @@ export function usePortfolioScreen() {
 
     const tokensUSD = stableBalances.reduce((sum, t) => sum + t.balance, 0);
 
-    const hyperLendUSD = (hyperLendPositions ?? []).reduce((sum, p) => sum + toNum(p.value), 0);
+    const hyperLendUSD = hyperLendAggregated.totalSuppliedUSD;
 
     const pendleUSD = (pendlePositions ?? []).reduce(
       (sum, p) =>
@@ -224,7 +283,7 @@ export function usePortfolioScreen() {
       pctHypercore: pct(hypercoreUSD),
       tokenItems,
     };
-  }, [feUSDBalance, usdt0Balance, usdt0FrontierBalance, hyperLendPositions, pendlePositions]);
+  }, [feUSDBalance, usdt0Balance, usdt0FrontierBalance, hyperLendAggregated, pendlePositions]);
 
   // Address management functions (simple functions, not callbacks)
   // Screen will compose these into callbacks with additional logic
@@ -268,7 +327,7 @@ export function usePortfolioScreen() {
     perpClearinghouseState,
     openOrders,
     hyperEvmBalance,
-    hyperLendPositions,
+    hyperLendData: hyperLendAggregated,
     pendlePositions,
 
     // Token balances

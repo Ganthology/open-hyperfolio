@@ -2,10 +2,10 @@ import type {
   SpotClearinghouseState,
   PerpClearinghouseState,
   OpenOrder,
-  HyperLendPosition,
   PendleMarketPosition,
   ERC20Balance,
 } from '../types';
+import type { HyperLendData } from '../entities/hyperlend/HyperLendData';
 
 /**
  * Repository interface for portfolio data retrieval
@@ -33,9 +33,10 @@ export interface PortfolioRepository {
   getHyperEvmBalance(address: string): Promise<string>;
 
   /**
-   * Get HyperLend positions for an address
+   * Get HyperLend data (Core and Isolated modules) for an address
+   * Includes positions, health factors, and totals
    */
-  getHyperLendPositions(address: string): Promise<HyperLendPosition[]>;
+  getHyperLendData(address: string): Promise<HyperLendData>;
 
   /**
    * Get Pendle positions for an address
